@@ -1,0 +1,84 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use IO::Socket;
+use Digest::MD5 qw(md5 md5_hex md5_base64);
+
+require 'server.conf';
+
+
+my $server = IO::Socket::INET->new(
+        LocalHost => $CFG::HOST,
+        LocalPort => $CFG::PORT,
+        #Type      => SOCK_STREAM,
+        Proto     => 'tcp',
+        Reuse     => 1,
+        Listen    => 8,
+    ) or die "Couldn't be a tcp server on " . $CFG::HOST . ":" . $CFG::PORT . ": $@\n";
+
+while (my $client = $server->accept()) {
+    my $ip = $client->peerhost();
+
+    my $rand = rand();
+    print $client "$rand\n";
+
+    my $chunk;
+    my $response = '';
+    while (substr($response, -1) ne "\n" and length($response) < 128 and $chunk = <$client>) {
+        $response .= $chunk;
+    }
+    close $client;
+    $response = substr($response, 0, -1);
+
+    my ($domain, $md5) = split(/:/, $response);
+    if($domain !~ /^[\w\.]+$/ or length($md5) ne 32) {
+        print "$ip: invalid response!\n";
+        next;
+    }
+
+    if(! -d "var/$domain") {
+        print "$ip: unknown domain!\n";
+        next;
+    }
+
+    my $fp;
+    my $line='';
+
+    if(-e "var/$domain/salt" and open($fp, '<', "var/$domain/salt")) {
+        $line = <$fp>;
+        close($fp);
+    }
+#    if(md5_hex($rand . $line) ne $md5) {
+#        print "$ip: bad checksum!\n";
+#        next;
+#    }
+
+    if(-e "var/$domain/last" and open($fp, '<', "var/$domain/last" )) {
+        $line = <$fp>;
+        close($fp);
+
+        if($line eq $ip) {
+           print "$ip: nothing changed.\n";
+           next;
+        }
+    }
+
+    $line = '';
+    if(open($fp, '<' . "var/$domain/cmd")) {
+        while(<$fp>) {
+            $_ =~ s/__IP__/$ip/g;
+            $line .= $_;
+        }
+        close($fp);
+
+        print("-\n", "$line", "\n-\n");
+#        system("rndc", "reload", $domain);
+    }
+    else {
+        print("cant open\n");
+    }
+}
+
+close($server);

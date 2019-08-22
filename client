@@ -1,0 +1,28 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings;
+
+use IO::Socket;
+use Digest::MD5 qw(md5 md5_hex md5_base64);
+
+require 'client.conf';
+
+my $client = IO::Socket::INET->new(
+        PeerHost  => $CFG::HOST,
+        PeerPort  => $CFG::PORT,
+        #Type      => ,
+        Proto     => 'tcp',
+        Timeout   => 3,
+  ) or die "Couldn't connect so server $CFG::HOST:$CFG::PORT: $@\n";
+
+
+$client->autoflush(1);
+
+my $rand;
+$client->recv($rand, 64);
+print ($CFG::DOMAIN . ':' . md5_hex($rand . $CFG::SALT) . "\n");
+$client->send($CFG::DOMAIN . ':' . md5_hex($rand . $CFG::SALT)."\n");
+# notify server that request has been sent
+shutdown($client, 1);
+$client->close();
